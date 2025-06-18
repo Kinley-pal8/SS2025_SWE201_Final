@@ -44,9 +44,18 @@ export default function Account() {
     updateProfile,
     signOut,
     loading: authLoading,
+    loadProfile,
   } = useAuthStore();
 
   const { myTracks, loadMyTracks } = useTracksStore();
+
+  // Helper function to check if user is an artist
+  const isUserArtist = () => {
+    return profile?.is_artist === true || 
+           user?.user_metadata?.is_artist === true || 
+           profile?.user_type === 'artist' || 
+           user?.user_metadata?.user_type === 'artist';
+  };
 
   // Local state for form inputs
   const [displayName, setDisplayName] = useState("");
@@ -72,19 +81,40 @@ export default function Account() {
   const modalSlideAnim = useRef(new Animated.Value(300)).current;
   const modalBackdropAnim = useRef(new Animated.Value(0)).current;
 
-  // Initialize form with profile data
+  // Debug logging
+  useEffect(() => {
+    console.log("🔍 ACCOUNT DEBUG - Raw user object:", user);
+    console.log("🔍 ACCOUNT DEBUG - User metadata:", user?.user_metadata);
+    console.log("🔍 ACCOUNT DEBUG - Raw profile object:", profile);
+    
+    // Check all possible ways the app might determine artist status
+    console.log("🎤 ARTIST STATUS CHECKS:");
+    console.log("  - profile?.is_artist:", profile?.is_artist);
+    console.log("  - profile?.user_type:", profile?.user_type);
+    console.log("  - user?.user_metadata?.is_artist:", user?.user_metadata?.is_artist);
+    console.log("  - user?.user_metadata?.user_type:", user?.user_metadata?.user_type);
+    console.log("  - isUserArtist():", isUserArtist());
+  }, [user, profile]);
+
+  // Initialize form with profile data (use user metadata as fallback)
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name || "");
       setArtistName(profile.artist_name || "");
       setBio(profile.bio || "");
       setLocation(profile.location || "");
+    } else if (user?.user_metadata) {
+      // Fallback to user metadata if profile is null
+      setDisplayName(user.user_metadata.display_name || "");
+      setArtistName(user.user_metadata.artist_name || "");
+      setBio(user.user_metadata.bio || "");
+      setLocation(user.user_metadata.location || "");
     }
-  }, [profile]);
+  }, [profile, user]);
 
   // Load user's tracks if they're an artist
   useEffect(() => {
-    if (user && profile?.is_artist) {
+    if (user && isUserArtist()) {
       loadMyTracks(user.id);
     }
   }, [user, profile]);
@@ -141,19 +171,14 @@ export default function Account() {
   const handleUpdateProfile = async () => {
     setLoading(true);
 
-    const updates: {
-      display_name: string;
-      bio: string;
-      location: string;
-      artist_name?: string;
-    } = {
+    const updates = {
       display_name: displayName.trim(),
       bio: bio.trim(),
       location: location.trim(),
     };
 
     // Add artist name if user is an artist
-    if (profile?.is_artist) {
+    if (isUserArtist()) {
       updates.artist_name = artistName.trim();
     }
 
@@ -236,6 +261,26 @@ export default function Account() {
       }
     } finally {
       setEmailLoading(false);
+    }
+  };
+
+  // Force reload profile function
+  const handleReloadProfile = async () => {
+    console.log("🔄 Force reloading profile...");
+    try {
+      // Force reload the auth user
+      const { data: { user: freshUser } } = await supabase.auth.getUser();
+      console.log("Fresh user from auth:", freshUser);
+      
+      // Force reload profile from auth store
+      if (loadProfile) {
+        await loadProfile();
+      }
+      console.log("✅ Profile reloaded");
+      Alert.alert("Success", "Profile reloaded!");
+    } catch (error) {
+      console.error("Error reloading profile:", error);
+      Alert.alert("Error", "Failed to reload profile");
     }
   };
 
@@ -384,13 +429,17 @@ export default function Account() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.welcomeText}>
-                {profile?.display_name || profile?.artist_name || "Music Lover"}
+                {profile?.display_name || 
+                 profile?.artist_name || 
+                 user?.user_metadata?.display_name ||
+                 user?.user_metadata?.artist_name ||
+                 "Music Lover"}
               </Text>
               <Text style={styles.memberSince}>
                 Member since{" "}
                 {new Date(user?.created_at || "").toLocaleDateString()}
               </Text>
-              {profile?.is_artist && (
+              {isUserArtist() && (
                 <View style={styles.artistBadge}>
                   <Text style={styles.artistBadgeText}>🎤 Artist</Text>
                 </View>
@@ -415,7 +464,7 @@ export default function Account() {
               />
               <InfoCard
                 label="Account Type"
-                value={profile?.is_artist ? "Artist" : "Listener"}
+                value={isUserArtist() ? "Artist" : "Listener"}
                 icon="person-outline"
               />
             </ProfileSection>
@@ -443,7 +492,7 @@ export default function Account() {
                 </View>
               </View>
 
-              {profile?.is_artist && (
+              {isUserArtist() && (
                 <View style={styles.inputWrapper}>
                   <Text style={styles.inputLabel}>Artist Name</Text>
                   <View style={styles.inputContainer}>
@@ -512,7 +561,7 @@ export default function Account() {
             </ProfileSection>
 
             {/* Artist Stats Section */}
-            {profile?.is_artist && (
+            {isUserArtist() && (
               <ProfileSection title="Your Music">
                 <View style={styles.statsContainer}>
                   <View style={styles.statItem}>
@@ -542,6 +591,20 @@ export default function Account() {
 
             {/* Action Buttons */}
             <View style={styles.actionButtons}>
+              {/* Debug: Force reload profile button */}
+              <TouchableOpacity
+                onPress={handleReloadProfile}
+                style={styles.debugButtonContainer}
+              >
+                <View style={styles.debugButton}>
+                  <Ionicons name="refresh-outline" size={20} color="#8B5CF6" />
+                  <Text style={styles.debugButtonText}>
+                    🔄 Reload Profile (Debug)
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Update profile button */}
               <TouchableOpacity
                 onPress={handleUpdateProfile}
                 disabled={loading || authLoading}
@@ -558,6 +621,7 @@ export default function Account() {
                 </LinearGradient>
               </TouchableOpacity>
 
+              {/* Sign out button */}
               <TouchableOpacity
                 onPress={handleSignOut}
                 style={styles.secondaryButtonContainer}
@@ -974,6 +1038,26 @@ const styles = StyleSheet.create({
   actionButtons: {
     paddingHorizontal: 20,
     gap: 16,
+  },
+  debugButtonContainer: {
+    borderRadius: 28,
+  },
+  debugButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 28,
+    gap: 8,
+  },
+  debugButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#8B5CF6",
   },
   primaryButtonContainer: {
     borderRadius: 28,

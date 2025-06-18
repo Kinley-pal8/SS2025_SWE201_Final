@@ -104,6 +104,14 @@ export default function Home() {
     clearMusicState,
   } = useMusicStore();
 
+  // Helper function to check if user is an artist (same as Account.tsx)
+  const isUserArtist = () => {
+    return profile?.is_artist === true || 
+           user?.user_metadata?.is_artist === true || 
+           profile?.user_type === 'artist' || 
+           user?.user_metadata?.user_type === 'artist';
+  };
+
   const [currentTime, setCurrentTime] = useState(() => {
     const hour = new Date().getHours();
     if (hour < 12) return "morning";
@@ -126,8 +134,20 @@ export default function Home() {
     extrapolate: "clamp",
   });
 
-  // Check if user is an artist
-  const isArtist = profile?.is_artist || false;
+  // Debug logging
+  useEffect(() => {
+    console.log("🏠 HOME DEBUG - Raw user object:", user);
+    console.log("🏠 HOME DEBUG - User metadata:", user?.user_metadata);
+    console.log("🏠 HOME DEBUG - Raw profile object:", profile);
+    
+    // Check all possible ways the app might determine artist status
+    console.log("🎤 HOME ARTIST STATUS CHECKS:");
+    console.log("  - profile?.is_artist:", profile?.is_artist);
+    console.log("  - profile?.user_type:", profile?.user_type);
+    console.log("  - user?.user_metadata?.is_artist:", user?.user_metadata?.is_artist);
+    console.log("  - user?.user_metadata?.user_type:", user?.user_metadata?.user_type);
+    console.log("  - isUserArtist():", isUserArtist());
+  }, [user, profile]);
 
   // Load tracks when user changes
   useEffect(() => {
@@ -157,6 +177,7 @@ export default function Home() {
       userId: user?.id,
       profile: profile?.display_name,
       tracksCount: tracks.length,
+      isArtist: isUserArtist(),
     });
   }, [user, profile, tracks]);
 
@@ -491,10 +512,14 @@ export default function Home() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                {isArtist && (
+                {/* Upload button - NOW USES CORRECTED ARTIST CHECK */}
+                {isUserArtist() && (
                   <TouchableOpacity
                     style={styles.actionButton}
-                    onPress={() => setShowUpload(true)}
+                    onPress={() => {
+                      console.log("🎵 Upload button pressed!");
+                      setShowUpload(true);
+                    }}
                   >
                     <LinearGradient
                       colors={["#8B5CF6", "#A855F7"]}
@@ -564,6 +589,9 @@ export default function Home() {
               📊 Status: {tracks.length} tracks loaded | User:{" "}
               {user?.email || "Not logged"} | Profile:{" "}
               {profile?.artist_name || profile?.display_name || "None"}
+            </Text>
+            <Text style={styles.debugText}>
+              🎤 Artist Status: {isUserArtist() ? "TRUE" : "FALSE"} | Upload Button: {isUserArtist() ? "VISIBLE" : "HIDDEN"}
             </Text>
             {tracksLoading && (
               <Text style={styles.debugText}>🔄 Loading...</Text>
@@ -686,11 +714,11 @@ export default function Home() {
               />
               <Text style={styles.emptyTitle}>No tracks yet</Text>
               <Text style={styles.emptyDescription}>
-                {isArtist
+                {isUserArtist()
                   ? "Upload your first track to get started"
                   : "Discover amazing music from local artists"}
               </Text>
-              {isArtist && (
+              {isUserArtist() && (
                 <TouchableOpacity
                   style={styles.emptyButton}
                   onPress={() => setShowUpload(true)}

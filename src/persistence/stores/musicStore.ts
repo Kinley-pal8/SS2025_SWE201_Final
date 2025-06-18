@@ -1,7 +1,77 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { Track } from "../../services/tracks/trackService";
 import { trackService } from "../../services/tracks/trackService";
+
+// Storage availability check and fallback implementation
+const createSafeStorage = () => {
+  // Try to use AsyncStorage (React Native) or localStorage (Web)
+  const getStorage = () => {
+    try {
+      // Check if we're in React Native environment
+      if (typeof window === "undefined") {
+        // React Native - try to import AsyncStorage
+        try {
+          const AsyncStorage =
+            require("@react-native-async-storage/async-storage").default;
+          return AsyncStorage;
+        } catch {
+          return null;
+        }
+      } else {
+        // Web environment - try localStorage
+        const testKey = "__storage_test__";
+        localStorage.setItem(testKey, "test");
+        localStorage.removeItem(testKey);
+        return localStorage;
+      }
+    } catch {
+      return null;
+    }
+  };
+
+  const storage = getStorage();
+
+  // If no storage is available, create memory-based fallback
+  if (!storage) {
+    const memoryStorage = new Map<string, string>();
+    return {
+      getItem: async (key: string) => memoryStorage.get(key) ?? null,
+      setItem: async (key: string, value: string) => {
+        memoryStorage.set(key, value);
+      },
+      removeItem: async (key: string) => {
+        memoryStorage.delete(key);
+      },
+    };
+  }
+
+  // Wrap the storage to handle async/sync differences
+  return {
+    getItem: async (key: string) => {
+      try {
+        const result = await storage.getItem(key);
+        return result;
+      } catch {
+        return null;
+      }
+    },
+    setItem: async (key: string, value: string) => {
+      try {
+        await storage.setItem(key, value);
+      } catch {
+        // Silently fail
+      }
+    },
+    removeItem: async (key: string) => {
+      try {
+        await storage.removeItem(key);
+      } catch {
+        // Silently fail
+      }
+    },
+  };
+};
 
 interface MusicState {
   // Playback state
@@ -318,6 +388,7 @@ export const useMusicStore = create<MusicState>()(
     }),
     {
       name: "music-storage",
+      storage: createJSONStorage(() => createSafeStorage()),
       partialize: (state) => ({
         volume: state.volume,
         shuffle: state.shuffle,
@@ -325,6 +396,12 @@ export const useMusicStore = create<MusicState>()(
         queue: state.queue,
         queueIndex: state.queueIndex,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Handle rehydration errors silently
+        if (state) {
+          console.log("🎵 Music store rehydrated successfully");
+        }
+      },
     }
   )
 );

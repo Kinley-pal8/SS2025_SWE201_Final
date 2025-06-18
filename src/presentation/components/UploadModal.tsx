@@ -15,14 +15,12 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import {
-  audioService,
-  UploadProgress,
-  TrackUploadData,
-} from "../../services/audio/audioService"; // Adjust the path as necessary
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+
+// Import your stores
+import { useAuthStore } from "../../persistence/stores/authStore";
+import { useTracksStore } from "../../persistence/stores/tracksStore";
 
 const { width, height } = Dimensions.get("window");
 
@@ -32,15 +30,21 @@ interface UploadModalProps {
 }
 
 const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
+  // Get user and tracks store
+  const { user } = useAuthStore();
+  const { createTrack, loading: storeLoading } = useTracksStore();
+
   const [uploadData, setUploadData] = useState({
     title: "",
     artist: "",
     album: "",
     genre: "",
+    description: "",
     audioFile: null as DocumentPicker.DocumentPickerResult | null,
     coverImage: null as ImagePicker.ImagePickerResult | null,
     isUploading: false,
     uploadProgress: 0,
+    statusMessage: "",
   });
 
   // Animation refs
@@ -79,29 +83,52 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
 
   const handleFileSelect = async () => {
     try {
-      const result = await audioService.selectAudioFile();
-      setUploadData((prev) => ({ ...prev, audioFile: result }));
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        console.log('📁 Audio file selected:', result.assets[0].name);
+        setUploadData((prev) => ({ ...prev, audioFile: result }));
+      }
     } catch (error) {
+      console.error('❌ Error selecting audio file:', error);
       Alert.alert(
         "Error",
-        error instanceof Error ? error.message : "Failed to select audio file"
+        "Failed to select audio file. Please try again."
       );
     }
   };
 
   const handleCoverSelect = async () => {
     try {
-      const result = await audioService.selectCoverImage();
-      setUploadData((prev) => ({ ...prev, coverImage: result }));
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        console.log('🖼️ Cover image selected:', result.assets[0].fileName);
+        setUploadData((prev) => ({ ...prev, coverImage: result }));
+      }
     } catch (error) {
+      console.error('❌ Error selecting cover image:', error);
       Alert.alert(
         "Error",
-        error instanceof Error ? error.message : "Failed to select cover image"
+        "Failed to select cover image. Please try again."
       );
     }
   };
 
   const handleUpload = async () => {
+    if (!user) {
+      Alert.alert("Error", "You must be logged in to upload tracks");
+      return;
+    }
+
     if (!uploadData.title.trim()) {
       Alert.alert("Missing Information", "Please provide a track title");
       return;
@@ -116,64 +143,117 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
       ...prev,
       isUploading: true,
       uploadProgress: 0,
+      statusMessage: "Preparing upload...",
     }));
 
     try {
-      const trackData: TrackUploadData = {
-        title: uploadData.title,
-        artist: uploadData.artist || "Unknown Artist",
-        album: uploadData.album,
-        genre: uploadData.genre,
-        audioFile: uploadData.audioFile,
-        coverImage: uploadData.coverImage,
-      };
-
-      await audioService.uploadTrack(trackData, (progress: UploadProgress) => {
-        setUploadData((prev) => ({
-          ...prev,
-          uploadProgress: progress.progress,
-          isUploading:
-            progress.status === "uploading" || progress.status === "processing",
-        }));
+      console.log('🔄 Starting upload:', uploadData.title);
+      console.log('📁 File details:', {
+        name: uploadData.audioFile.assets[0].name,
+        size: uploadData.audioFile.assets[0].size,
+        type: uploadData.audioFile.assets[0].mimeType,
       });
 
-      Alert.alert(
-        "🎉 Upload Successful!",
-        "Your track has been uploaded and is now live on Biito!",
-        [
-          {
-            text: "Great!",
-            onPress: () => {
-              onClose();
-              setUploadData({
-                title: "",
-                artist: "",
-                album: "",
-                genre: "",
-                audioFile: null,
-                coverImage: null,
-                isUploading: false,
-                uploadProgress: 0,
-              });
-            },
-          },
-        ]
+      // Prepare track data for your tracksStore
+      const trackData = {
+        title: uploadData.title.trim(),
+        genre: uploadData.genre.trim() || null,
+        album: uploadData.album.trim() || null,
+        description: uploadData.description.trim() || null,
+        audioFile: uploadData.audioFile.assets[0], // Get the actual file
+      };
+
+      // Progressive status updates with timeouts
+      const updateProgress = (progress: number, message: string) => {
+        console.log(`📊 Upload progress: ${progress}% - ${message}`);
+        setUploadData((prev) => ({
+          ...prev,
+          uploadProgress: progress,
+          statusMessage: message,
+        }));
+      };
+
+      // Step 1: Validate file
+      updateProgress(10, "Validating audio file...");
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 2: Start upload
+      updateProgress(20, "Starting file upload...");
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Step 3: Upload file (this is where it might get stuck)
+      updateProgress(30, "Uploading to storage...");
+      
+      // Add timeout wrapper for createTrack
+      const uploadTimeout = 60000; // 60 seconds timeout
+      console.log(`⏰ Starting createTrack with ${uploadTimeout}ms timeout`);
+      console.log('📋 Track data being sent:', {
+        ...trackData,
+        audioFile: `${trackData.audioFile.name} (${trackData.audioFile.size} bytes)`
+      });
+      
+      const uploadPromise = createTrack(user.id, trackData);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout after 60 seconds')), uploadTimeout)
       );
+
+      updateProgress(60, "Processing audio file...");
+      
+      // Race between upload and timeout
+      const success = await Promise.race([uploadPromise, timeoutPromise]);
+
+      console.log('✅ Upload result:', success);
+      console.log('✅ Upload completed successfully at:', new Date().toISOString());
+
+      if (success) {
+        updateProgress(90, "Finalizing upload...");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        updateProgress(100, "Upload complete!");
+        
+        setTimeout(() => {
+          Alert.alert(
+            "🎉 Upload Successful!",
+            `"${uploadData.title}" has been uploaded successfully!`,
+            [
+              {
+                text: "Great!",
+                onPress: () => {
+                  handleClose();
+                },
+              },
+            ]
+          );
+        }, 500);
+      } else {
+        throw new Error('Upload failed - createTrack returned false');
+      }
     } catch (error) {
+      console.error('❌ Upload error:', error);
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      
       Alert.alert(
         "Upload Failed",
-        error instanceof Error
-          ? error.message
-          : "Failed to upload track. Please try again.",
+        `Failed to upload track: ${errorMessage}`,
         [
           {
-            text: "OK",
+            text: "Try Again",
             onPress: () => {
               setUploadData((prev) => ({
                 ...prev,
                 isUploading: false,
                 uploadProgress: 0,
+                statusMessage: "",
               }));
+            },
+          },
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              resetForm();
             },
           },
         ]
@@ -192,17 +272,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
             text: "Cancel Upload",
             style: "destructive",
             onPress: () => {
+              resetForm();
               onClose();
-              setUploadData({
-                title: "",
-                artist: "",
-                album: "",
-                genre: "",
-                audioFile: null,
-                coverImage: null,
-                isUploading: false,
-                uploadProgress: 0,
-              });
             },
           },
         ]
@@ -210,21 +281,33 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
       return;
     }
 
+    resetForm();
     onClose();
-    // Reset form when closing
-    setTimeout(() => {
-      setUploadData({
-        title: "",
-        artist: "",
-        album: "",
-        genre: "",
-        audioFile: null,
-        coverImage: null,
-        isUploading: false,
-        uploadProgress: 0,
-      });
-    }, 300);
   };
+
+  const resetForm = () => {
+    setUploadData({
+      title: "",
+      artist: "",
+      album: "",
+      genre: "",
+      description: "",
+      audioFile: null,
+      coverImage: null,
+      isUploading: false,
+      uploadProgress: 0,
+      statusMessage: "",
+    });
+  };
+
+  // Check if upload can be enabled
+  const canUpload = uploadData.title.trim() && uploadData.audioFile && !uploadData.isUploading && !storeLoading;
+
+  // Common genres for quick selection
+  const commonGenres = [
+    'Hip-Hop', 'Electronic', 'Pop', 'Rock', 'Jazz', 'Classical',
+    'R&B', 'Country', 'Reggae', 'Blues', 'Folk', 'Indie'
+  ];
 
   return (
     <Modal
@@ -279,26 +362,17 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
 
               <TouchableOpacity
                 onPress={handleUpload}
-                disabled={
-                  uploadData.isUploading ||
-                  !uploadData.title.trim() ||
-                  !uploadData.audioFile
-                }
+                disabled={!canUpload}
                 style={[
                   styles.headerButton,
-                  (!uploadData.title.trim() || !uploadData.audioFile) &&
-                    styles.headerButtonDisabled,
+                  !canUpload && styles.headerButtonDisabled,
                 ]}
               >
-                {uploadData.isUploading ? (
+                {(uploadData.isUploading || storeLoading) ? (
                   <ActivityIndicator size="small" color="#8B5CF6" />
                 ) : (
                   <LinearGradient
-                    colors={
-                      !uploadData.title.trim() || !uploadData.audioFile
-                        ? ["#666", "#666"]
-                        : ["#8B5CF6", "#A855F7"]
-                    }
+                    colors={canUpload ? ["#8B5CF6", "#A855F7"] : ["#666", "#666"]}
                     style={styles.uploadButtonGradient}
                   >
                     <Text style={styles.uploadButtonText}>Upload</Text>
@@ -337,26 +411,47 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                 </View>
               </View>
 
-              {/* Artist Name Input */}
+              {/* Genre Input */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Artist Name</Text>
+                <Text style={styles.inputLabel}>Genre</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
-                    name="person-outline"
+                    name="radio-outline"
                     size={20}
                     color="#8B5CF6"
                     style={styles.inputIcon}
                   />
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Your artist name"
+                    placeholder="e.g. Pop, Rock, Hip-Hop"
                     placeholderTextColor="#666"
-                    value={uploadData.artist}
+                    value={uploadData.genre}
                     onChangeText={(text) =>
-                      setUploadData((prev) => ({ ...prev, artist: text }))
+                      setUploadData((prev) => ({ ...prev, genre: text }))
                     }
                     editable={!uploadData.isUploading}
                   />
+                </View>
+                {/* Quick Genre Selection */}
+                <View style={styles.genreChips}>
+                  {commonGenres.map((genreOption) => (
+                    <TouchableOpacity
+                      key={genreOption}
+                      style={[
+                        styles.genreChip,
+                        uploadData.genre === genreOption && styles.genreChipSelected
+                      ]}
+                      onPress={() => setUploadData((prev) => ({ ...prev, genre: genreOption }))}
+                      disabled={uploadData.isUploading}
+                    >
+                      <Text style={[
+                        styles.genreChipText,
+                        uploadData.genre === genreOption && styles.genreChipTextSelected
+                      ]}>
+                        {genreOption}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
 
@@ -383,25 +478,28 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                 </View>
               </View>
 
-              {/* Genre Input */}
+              {/* Description Input */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Genre</Text>
-                <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Description</Text>
+                <View style={[styles.inputContainer, styles.textAreaContainer]}>
                   <Ionicons
-                    name="radio-outline"
+                    name="document-text-outline"
                     size={20}
                     color="#8B5CF6"
-                    style={styles.inputIcon}
+                    style={[styles.inputIcon, styles.textAreaIcon]}
                   />
                   <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. Pop, Rock, Hip-Hop"
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Describe your track... (optional)"
                     placeholderTextColor="#666"
-                    value={uploadData.genre}
+                    value={uploadData.description}
                     onChangeText={(text) =>
-                      setUploadData((prev) => ({ ...prev, genre: text }))
+                      setUploadData((prev) => ({ ...prev, description: text }))
                     }
                     editable={!uploadData.isUploading}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
                   />
                 </View>
               </View>
@@ -458,53 +556,21 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                 </TouchableOpacity>
               </View>
 
-              {/* Cover Image Picker */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Cover Art</Text>
+              {/* Big Upload Button (Additional) */}
+              {canUpload && !uploadData.isUploading && (
                 <TouchableOpacity
-                  style={[
-                    styles.filePicker,
-                    uploadData.isUploading && styles.filePickerDisabled,
-                    uploadData.coverImage && styles.filePickerSelected,
-                  ]}
-                  onPress={handleCoverSelect}
-                  disabled={uploadData.isUploading}
+                  style={styles.bigUploadButton}
+                  onPress={handleUpload}
                 >
                   <LinearGradient
-                    colors={
-                      uploadData.coverImage
-                        ? ["rgba(139, 92, 246, 0.2)", "rgba(168, 85, 247, 0.1)"]
-                        : [
-                            "rgba(255, 255, 255, 0.05)",
-                            "rgba(255, 255, 255, 0.02)",
-                          ]
-                    }
-                    style={styles.filePickerGradient}
+                    colors={["#8B5CF6", "#A855F7"]}
+                    style={styles.bigUploadButtonGradient}
                   >
-                    <View style={styles.filePickerIcon}>
-                      <Ionicons
-                        name={
-                          uploadData.coverImage ? "image" : "camera-outline"
-                        }
-                        size={32}
-                        color={uploadData.coverImage ? "#8B5CF6" : "#666"}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.filePickerText,
-                        uploadData.coverImage && styles.filePickerTextSelected,
-                      ]}
-                    >
-                      {uploadData.coverImage?.assets?.[0]?.fileName ||
-                        "Tap to select cover image"}
-                    </Text>
-                    <Text style={styles.filePickerSubtext}>
-                      JPG, PNG • Min 640x640px • Optional
-                    </Text>
+                    <Ionicons name="cloud-upload" size={24} color="#FFFFFF" />
+                    <Text style={styles.bigUploadButtonText}>Upload Track</Text>
                   </LinearGradient>
                 </TouchableOpacity>
-              </View>
+              )}
 
               {/* Upload Progress */}
               {uploadData.isUploading && (
@@ -536,7 +602,68 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                     </View>
 
                     <Text style={styles.uploadStatusText}>
-                      Processing audio and preparing for streaming...
+                      {uploadData.statusMessage || "Processing audio and saving to database..."}
+                    </Text>
+
+                    {/* Cancel Upload Button */}
+                    <TouchableOpacity
+                      style={styles.cancelUploadButton}
+                      onPress={() => {
+                        Alert.alert(
+                          "Cancel Upload",
+                          "Are you sure you want to cancel the upload?",
+                          [
+                            { text: "Continue", style: "cancel" },
+                            {
+                              text: "Cancel Upload",
+                              style: "destructive",
+                              onPress: () => {
+                                console.log('🚫 User cancelled upload');
+                                resetForm();
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Text style={styles.cancelUploadText}>Cancel Upload</Text>
+                    </TouchableOpacity>
+                  </LinearGradient>
+                </View>
+              )}
+
+              {/* Debug Information (only show during upload) */}
+              {uploadData.isUploading && (
+                <View style={styles.debugContainer}>
+                  <LinearGradient
+                    colors={[
+                      "rgba(75, 85, 99, 0.1)",
+                      "rgba(75, 85, 99, 0.05)",
+                    ]}
+                    style={styles.debugGradient}
+                  >
+                    <View style={styles.debugHeader}>
+                      <Ionicons
+                        name="bug-outline"
+                        size={16}
+                        color="#9CA3AF"
+                      />
+                      <Text style={styles.debugTitle}>Debug Info</Text>
+                    </View>
+                    <Text style={styles.debugText}>
+                      File: {uploadData.audioFile?.assets?.[0]?.name || 'None'}
+                    </Text>
+                    <Text style={styles.debugText}>
+                      Size: {uploadData.audioFile?.assets?.[0]?.size ? 
+                        `${(uploadData.audioFile.assets[0].size / (1024 * 1024)).toFixed(2)} MB` : 
+                        'Unknown'
+                      }
+                    </Text>
+                    <Text style={styles.debugText}>
+                      Status: {uploadData.statusMessage || 'Starting...'}
+                    </Text>
+                    <Text style={styles.debugText}>
+                      Progress: {uploadData.uploadProgress}%
                     </Text>
                   </LinearGradient>
                 </View>
@@ -590,7 +717,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                         color="#8B5CF6"
                       />
                       <Text style={styles.guidelineText}>
-                        Cover art: 640x640px minimum
+                        Track title and audio file are required
                       </Text>
                     </View>
                     <View style={styles.guidelineItem}>
@@ -601,16 +728,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                       />
                       <Text style={styles.guidelineText}>
                         Ensure you own all rights to the music
-                      </Text>
-                    </View>
-                    <View style={styles.guidelineItem}>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={16}
-                        color="#8B5CF6"
-                      />
-                      <Text style={styles.guidelineText}>
-                        Content will be reviewed before going live
                       </Text>
                     </View>
                   </View>
@@ -720,8 +837,15 @@ const styles = StyleSheet.create({
     borderColor: "rgba(139, 92, 246, 0.2)",
     paddingHorizontal: 16,
   },
+  textAreaContainer: {
+    alignItems: "flex-start",
+    paddingVertical: 8,
+  },
   inputIcon: {
     marginRight: 12,
+  },
+  textAreaIcon: {
+    marginTop: 8,
   },
   textInput: {
     flex: 1,
@@ -729,6 +853,36 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     paddingVertical: 16,
     fontWeight: "500",
+  },
+  textArea: {
+    height: 80,
+    paddingVertical: 8,
+  },
+  genreChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 8,
+  },
+  genreChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  genreChipSelected: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: '#8B5CF6',
+  },
+  genreChipText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  genreChipTextSelected: {
+    color: '#8B5CF6',
   },
   filePicker: {
     borderRadius: 16,
@@ -767,6 +921,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     textAlign: "center",
+  },
+  bigUploadButton: {
+    marginVertical: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  bigUploadButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+  },
+  bigUploadButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginLeft: 8,
   },
   uploadProgress: {
     marginBottom: 24,
@@ -807,6 +984,48 @@ const styles = StyleSheet.create({
     color: "#B3B3B3",
     textAlign: "center",
     fontStyle: "italic",
+    marginBottom: 16,
+  },
+  cancelUploadButton: {
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 107, 107, 0.3)",
+    backgroundColor: "rgba(255, 107, 107, 0.1)",
+  },
+  cancelUploadText: {
+    color: "#FF6B6B",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  debugContainer: {
+    marginBottom: 24,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  debugGradient: {
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(75, 85, 99, 0.2)",
+  },
+  debugHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  debugTitle: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginBottom: 4,
+    fontFamily: 'monospace',
   },
   guidelinesContainer: {
     marginBottom: 24,

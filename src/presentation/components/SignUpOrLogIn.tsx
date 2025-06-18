@@ -9,7 +9,8 @@ import {
   Animated,
   Dimensions,
   StatusBar,
-  ScrollView
+  ScrollView,
+  SafeAreaView
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -299,218 +300,239 @@ export default function SignUpOrLogIn() {
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
-      <LinearGradient
-        colors={['#0A0A0A', '#1A0A1A', '#0A0A0A']}
-        style={styles.container}
-      >
-        <Animated.View 
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
+      <SafeAreaView style={styles.safeArea}>
+        <LinearGradient
+          colors={['#0A0A0A', '#1A0A1A', '#0A0A0A']}
+          style={styles.container}
         >
-          {/* Logo and Brand */}
-          <View style={styles.logoContainer}>
-            <View style={styles.logoWrapper}>
-              <Image
-                source={require("../../../assets/logo.png")}
-                style={styles.logo}
-              />
-            </View>
-            <Text style={styles.brandName}>Biito</Text>
-          </View>
-
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Start your music journey</Text>
-            <Text style={styles.subtitle}>Join millions of music lovers and creators worldwide</Text>
-          </View>
-
-          {/* Sign Up Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>✨ New to Biito?</Text>
-            
-            {/* Continue with Email - Sign Up */}
-            <Animated.View style={{ transform: [{ scale: buttonScales[0] }] }}>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPressIn={() => handlePressIn(0)}
-                onPressOut={() => handlePressOut(0)}
-                onPress={() => handleActionPress("email", "signup")}
-                activeOpacity={1}
-              >
-                <LinearGradient
-                  colors={['#8B5CF6', '#A855F7', '#9333EA']}
-                  style={styles.buttonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>Sign up with email</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Continue with Phone - Sign Up */}
-            <Animated.View style={{ transform: [{ scale: buttonScales[1] }] }}>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPressIn={() => handlePressIn(1)}
-                onPressOut={() => handlePressOut(1)}
-                onPress={() => handleActionPress("phone", "signup")}
-                activeOpacity={1}
-              >
-                <View style={styles.secondaryButtonContent}>
-                  <Ionicons name="call-outline" size={20} color="#8B5CF6" />
-                  <Text style={styles.secondaryButtonText}>Sign up with phone</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#8B5CF6" />
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <LinearGradient
-              colors={['#8B5CF6', '#A855F7']}
-              style={styles.dividerDot}
+          <ScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <Animated.View 
+              style={[
+                styles.content,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }]
+                }
+              ]}
             >
-              <Text style={styles.dividerText}>or</Text>
-            </LinearGradient>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Sign In Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🎵 Already have an account?</Text>
-            
-            {/* Continue with Email - Sign In */}
-            <Animated.View style={{ transform: [{ scale: buttonScales[2] }] }}>
-              <TouchableOpacity
-                style={styles.outlineButton}
-                onPressIn={() => handlePressIn(2)}
-                onPressOut={() => handlePressOut(2)}
-                onPress={() => handleActionPress("email", "signin")}
-                activeOpacity={1}
-              >
-                <View style={styles.outlineButtonContent}>
-                  <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.outlineButtonText}>Sign in with email</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              {/* Logo and Brand */}
+              <View style={styles.logoContainer}>
+                <View style={styles.logoWrapper}>
+                  <Image
+                    source={require("../../../assets/logo.png")}
+                    style={styles.logo}
+                    resizeMode="contain"
+                  />
                 </View>
-              </TouchableOpacity>
-            </Animated.View>
+                <Text style={styles.brandName}>Biito</Text>
+              </View>
 
-            {/* Continue with Phone - Sign In */}
-            <Animated.View style={{ transform: [{ scale: buttonScales[3] }] }}>
-              <TouchableOpacity
-                style={styles.outlineButton}
-                onPressIn={() => handlePressIn(3)}
-                onPressOut={() => handlePressOut(3)}
-                onPress={() => handleActionPress("phone", "signin")}
-                activeOpacity={1}
-              >
-                <View style={styles.outlineButtonContent}>
-                  <Ionicons name="call-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.outlineButtonText}>Sign in with phone</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              <View style={styles.titleContainer}>
+                <Text style={styles.title}>Start your music journey</Text>
+                <Text style={styles.subtitle}>Join millions of music lovers and creators worldwide</Text>
+              </View>
+
+              {/* Sign Up Section */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>✨ New to Biito?</Text>
+                
+                {/* Continue with Email - Sign Up */}
+                <Animated.View style={{ transform: [{ scale: buttonScales[0] }] }}>
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPressIn={() => handlePressIn(0)}
+                    onPressOut={() => handlePressOut(0)}
+                    onPress={() => handleActionPress("email", "signup")}
+                    activeOpacity={1}
+                  >
+                    <LinearGradient
+                      colors={['#8B5CF6', '#A855F7', '#9333EA']}
+                      style={styles.buttonGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.primaryButtonText}>Sign up with email</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+
+                {/* Continue with Phone - Sign Up */}
+                <Animated.View style={{ transform: [{ scale: buttonScales[1] }] }}>
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPressIn={() => handlePressIn(1)}
+                    onPressOut={() => handlePressOut(1)}
+                    onPress={() => handleActionPress("phone", "signup")}
+                    activeOpacity={1}
+                  >
+                    <View style={styles.secondaryButtonContent}>
+                      <Ionicons name="call-outline" size={20} color="#8B5CF6" />
+                      <Text style={styles.secondaryButtonText}>Sign up with phone</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#8B5CF6" />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <LinearGradient
+                  colors={['#8B5CF6', '#A855F7']}
+                  style={styles.dividerDot}
+                >
+                  <Text style={styles.dividerText}>or</Text>
+                </LinearGradient>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Sign In Section */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>🎵 Already have an account?</Text>
+                
+                {/* Continue with Email - Sign In */}
+                <Animated.View style={{ transform: [{ scale: buttonScales[2] }] }}>
+                  <TouchableOpacity
+                    style={styles.outlineButton}
+                    onPressIn={() => handlePressIn(2)}
+                    onPressOut={() => handlePressOut(2)}
+                    onPress={() => handleActionPress("email", "signin")}
+                    activeOpacity={1}
+                  >
+                    <View style={styles.outlineButtonContent}>
+                      <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.outlineButtonText}>Sign in with email</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+
+                {/* Continue with Phone - Sign In */}
+                <Animated.View style={{ transform: [{ scale: buttonScales[3] }] }}>
+                  <TouchableOpacity
+                    style={styles.outlineButton}
+                    onPressIn={() => handlePressIn(3)}
+                    onPressOut={() => handlePressOut(3)}
+                    onPress={() => handleActionPress("phone", "signin")}
+                    activeOpacity={1}
+                  >
+                    <View style={styles.outlineButtonContent}>
+                      <Ionicons name="call-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.outlineButtonText}>Sign in with phone</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+
+              {/* Footer */}
+              <View style={styles.footer}>
+                <View style={styles.footerContent}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color="#666" />
+                  <Text style={styles.footerText}>
+                    By continuing, you agree to our Terms of Service and Privacy Policy
+                  </Text>
                 </View>
-              </TouchableOpacity>
+              </View>
             </Animated.View>
-          </View>
+          </ScrollView>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <View style={styles.footerContent}>
-              <Ionicons name="shield-checkmark-outline" size={16} color="#666" />
-              <Text style={styles.footerText}>
-                By continuing, you agree to our Terms of Service and Privacy Policy
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* User Type Selection Modal */}
-        <UserTypeModal />
-      </LinearGradient>
+          {/* User Type Selection Modal */}
+          <UserTypeModal />
+        </LinearGradient>
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0A0A0A',
+  },
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    minHeight: height,
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    paddingTop: 60, // Added extra top padding
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32, // Reduced from 40
+    marginTop: 20, // Added top margin
   },
   logoWrapper: {
-    width: 100,
-    height: 100,
-    borderRadius: 25,
+    width: 80, // Reduced from 100
+    height: 80, // Reduced from 100
+    borderRadius: 20, // Adjusted proportionally
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.2)',
   },
   logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
+    width: 60, // Reduced from 80
+    height: 60, // Reduced from 80
+    borderRadius: 15, // Adjusted proportionally
   },
   brandName: {
-    fontSize: 32,
+    fontSize: 28, // Reduced from 32
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 1.5,
+    letterSpacing: 1.2, // Reduced from 1.5
   },
   titleContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 36, // Reduced from 48
+    paddingHorizontal: 10,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26, // Reduced from 28
     fontWeight: "800",
     color: "#FFFFFF",
-    marginBottom: 12,
+    marginBottom: 10, // Reduced from 12
     textAlign: "center",
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16
     color: "#B3B3B3",
     textAlign: "center",
-    lineHeight: 22,
-    paddingHorizontal: 20,
+    lineHeight: 20, // Reduced from 22
+    paddingHorizontal: 10, // Reduced from 20
   },
   section: {
     width: "100%",
-    marginBottom: 32,
+    marginBottom: 24, // Reduced from 32
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17, // Reduced from 18
     fontWeight: "700",
     color: "#FFFFFF",
-    marginBottom: 20,
+    marginBottom: 16, // Reduced from 20
     textAlign: "center",
     letterSpacing: 0.5,
   },
   primaryButton: {
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
     borderRadius: 28,
     shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 8 },
@@ -522,13 +544,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
+    paddingVertical: 14, // Reduced from 16
     paddingHorizontal: 24,
     borderRadius: 28,
-    minHeight: 56,
+    minHeight: 52, // Reduced from 56
   },
   primaryButtonText: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16
     fontWeight: "700",
     color: "#FFFFFF",
     flex: 1,
@@ -537,7 +559,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   secondaryButton: {
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   secondaryButtonContent: {
     flexDirection: 'row',
@@ -547,12 +569,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.3)',
     borderRadius: 28,
-    paddingVertical: 16,
+    paddingVertical: 14, // Reduced from 16
     paddingHorizontal: 24,
-    minHeight: 56,
+    minHeight: 52, // Reduced from 56
   },
   secondaryButtonText: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16
     fontWeight: "600",
     color: "#8B5CF6",
     flex: 1,
@@ -561,7 +583,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   outlineButton: {
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   outlineButtonContent: {
     flexDirection: 'row',
@@ -571,12 +593,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 28,
-    paddingVertical: 16,
+    paddingVertical: 14, // Reduced from 16
     paddingHorizontal: 24,
-    minHeight: 56,
+    minHeight: 52, // Reduced from 56
   },
   outlineButtonText: {
-    fontSize: 16,
+    fontSize: 15, // Reduced from 16
     fontWeight: "600",
     color: "#FFFFFF",
     flex: 1,
@@ -588,7 +610,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     width: "100%",
-    marginVertical: 32,
+    marginVertical: 24, // Reduced from 32
   },
   dividerLine: {
     flex: 1,
@@ -596,21 +618,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(139, 92, 246, 0.2)",
   },
   dividerDot: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36, // Reduced from 40
+    height: 36, // Reduced from 40
+    borderRadius: 18, // Adjusted proportionally
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 16,
   },
   dividerText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 13, // Reduced from 14
     fontWeight: '600',
   },
   footer: {
-    marginTop: 32,
+    marginTop: 24, // Reduced from 32
     paddingHorizontal: 20,
+    paddingBottom: 20, // Added bottom padding
   },
   footerContent: {
     flexDirection: 'row',
@@ -619,13 +642,13 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: "#666",
-    fontSize: 12,
+    fontSize: 11, // Reduced from 12
     textAlign: "center",
-    lineHeight: 16,
+    lineHeight: 15, // Reduced from 16
     marginLeft: 8,
     flex: 1,
   },
-  // Modal Styles
+  // Modal Styles (unchanged)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.9)",
