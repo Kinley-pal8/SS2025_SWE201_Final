@@ -3,8 +3,8 @@ import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
-import { supabase } from "../lib/supabase";
-import { Song } from "../components/MusicPlayerCard";
+import { supabase } from "../api/supabaseClient";
+import { Song } from "../../presentation/components/MusicPlayerCard";
 
 // Upload-related interfaces
 export interface UploadProgress {

@@ -316,7 +316,7 @@ export default function SignUpOrLogIn() {
           <View style={styles.logoContainer}>
             <View style={styles.logoWrapper}>
               <Image
-                source={require("../assets/logo.png")}
+                source={require("../../../assets/logo.png")}
                 style={styles.logo}
               />
             </View>

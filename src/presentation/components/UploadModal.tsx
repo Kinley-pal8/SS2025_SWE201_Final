@@ -20,7 +20,7 @@ import {
   audioService,
   UploadProgress,
   TrackUploadData,
-} from "../services/AudioService";
+} from "../../services/audio/audioService"; // Adjust the path as necessary
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 

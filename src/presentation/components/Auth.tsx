@@ -15,7 +15,7 @@ import {
   Dimensions,
   StatusBar,
 } from "react-native";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../services/api/supabaseClient"; // Adjust the path as necessary
 import { Input } from "@rneui/themed";
 import { makeRedirectUri } from "expo-auth-session";
 import * as QueryParams from "expo-auth-session/build/QueryParams";
@@ -336,7 +336,7 @@ export default function Auth() {
               {/* Logo */}
               <View style={styles.logoContainer}>
                 <Image
-                  source={require("../assets/logo.png")}
+                  source={require("../../../assets/logo.png")}
                   style={styles.logo}
                 />
                 <Text style={styles.brandName}>Biito</Text>

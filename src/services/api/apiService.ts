@@ -1,5 +1,5 @@
 // services/ApiService.ts
-import { supabase } from '../lib/supabase';
+import { supabase } from './supabaseClient'; // Adjust the path as necessary
 
 class ApiService {
   async uploadAudio(file: any, metadata: any) {

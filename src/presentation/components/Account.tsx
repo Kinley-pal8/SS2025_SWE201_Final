@@ -1,42 +1,62 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "../lib/supabase";
-import { 
-  StyleSheet, 
-  View, 
-  Alert, 
-  Image, 
-  Text, 
-  ScrollView, 
+import {
+  StyleSheet,
+  View,
+  Alert,
+  Image,
+  Text,
+  ScrollView,
   TouchableOpacity,
   Modal,
   SafeAreaView,
   Animated,
   Dimensions,
-  StatusBar
+  StatusBar,
 } from "react-native";
 import { Input } from "@rneui/themed";
-import { Session } from "@supabase/supabase-js";
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
 
-const { width, height } = Dimensions.get('window');
+// Import the Zustand stores (updated paths based on your structure)
+import { useAuthStore } from "../../persistence/stores/authStore";
+import { useTracksStore } from "../../persistence/stores/tracksStore";
+import { supabase } from "../../services/api/supabaseClient";
 
-export default function Account({ route }: { route: any }) {
-  const navigation = useNavigation();
-  const params = route?.params as { session?: Session } | undefined;
-  const session = params?.session;
+// Import the navigation types
+import type { RootStackParamList } from "../../../App";
 
-  const [loading, setLoading] = useState(true);
-  const [username, setUsername] = useState("");
-  const [website, setWebsite] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  
+const { width, height } = Dimensions.get("window");
+
+type AccountScreenNavigationProp = StackNavigationProp<
+  RootStackParamList,
+  "Account"
+>;
+
+export default function Account() {
+  const navigation = useNavigation<AccountScreenNavigationProp>();
+
+  // Get data from stores instead of route params
+  const {
+    user,
+    profile,
+    updateProfile,
+    signOut,
+    loading: authLoading,
+  } = useAuthStore();
+
+  const { myTracks, loadMyTracks } = useTracksStore();
+
+  // Local state for form inputs
+  const [displayName, setDisplayName] = useState("");
+  const [artistName, setArtistName] = useState("");
+  const [bio, setBio] = useState("");
+  const [location, setLocation] = useState("");
+  const [loading, setLoading] = useState(false);
+
   // Password change states
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -52,10 +72,25 @@ export default function Account({ route }: { route: any }) {
   const modalSlideAnim = useRef(new Animated.Value(300)).current;
   const modalBackdropAnim = useRef(new Animated.Value(0)).current;
 
+  // Initialize form with profile data
   useEffect(() => {
-    if (session) getProfile();
-    
-    // Initialize animations
+    if (profile) {
+      setDisplayName(profile.display_name || "");
+      setArtistName(profile.artist_name || "");
+      setBio(profile.bio || "");
+      setLocation(profile.location || "");
+    }
+  }, [profile]);
+
+  // Load user's tracks if they're an artist
+  useEffect(() => {
+    if (user && profile?.is_artist) {
+      loadMyTracks(user.id);
+    }
+  }, [user, profile]);
+
+  // Initialize animations
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -68,8 +103,9 @@ export default function Account({ route }: { route: any }) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [session]);
+  }, []);
 
+  // Modal animations
   useEffect(() => {
     if (showPasswordModal || showEmailModal) {
       Animated.parallel([
@@ -101,81 +137,39 @@ export default function Account({ route }: { route: any }) {
     }
   }, [showPasswordModal, showEmailModal]);
 
-  async function getProfile() {
-    try {
-      setLoading(true);
-      if (!session?.user) throw new Error("No user on the session!");
+  // Update profile using store
+  const handleUpdateProfile = async () => {
+    setLoading(true);
 
-      const { data, error, status } = await supabase
-        .from("profiles")
-        .select(`username, website, avatar_url, full_name, phone`)
-        .eq("id", session?.user.id)
-        .single();
-      
-      if (error && status !== 406) {
-        throw error;
-      }
+    const updates: {
+      display_name: string;
+      bio: string;
+      location: string;
+      artist_name?: string;
+    } = {
+      display_name: displayName.trim(),
+      bio: bio.trim(),
+      location: location.trim(),
+    };
 
-      if (data) {
-        setUsername(data.username || "");
-        setWebsite(data.website || "");
-        setAvatarUrl(data.avatar_url || "");
-        setFullName(data.full_name || "");
-        setPhone(data.phone || "");
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        Alert.alert("Error", error.message);
-      }
-    } finally {
-      setLoading(false);
+    // Add artist name if user is an artist
+    if (profile?.is_artist) {
+      updates.artist_name = artistName.trim();
     }
-  }
 
-  async function updateProfile({
-    username,
-    website,
-    avatar_url,
-    full_name,
-    phone,
-  }: {
-    username: string;
-    website: string;
-    avatar_url: string;
-    full_name: string;
-    phone: string;
-  }) {
-    try {
-      setLoading(true);
-      if (!session?.user) throw new Error("No user on the session!");
+    const success = await updateProfile(updates);
 
-      const updates = {
-        id: session?.user.id,
-        username,
-        website,
-        avatar_url,
-        full_name,
-        phone,
-        updated_at: new Date(),
-      };
-
-      const { error } = await supabase.from("profiles").upsert(updates);
-
-      if (error) {
-        throw error;
-      }
-      
+    if (success) {
       Alert.alert("Success", "Profile updated successfully!");
-    } catch (error) {
-      if (error instanceof Error) {
-        Alert.alert("Error", error.message);
-      }
-    } finally {
-      setLoading(false);
+    } else {
+      Alert.alert("Error", "Failed to update profile");
     }
-  }
 
-  async function changePassword() {
+    setLoading(false);
+  };
+
+  // Change password function
+  const changePassword = async () => {
     try {
       if (newPassword !== confirmPassword) {
         Alert.alert("Error", "New passwords don't match!");
@@ -189,8 +183,9 @@ export default function Account({ route }: { route: any }) {
 
       setPasswordLoading(true);
 
+      // Use imported supabase for auth operations
       const { error } = await supabase.auth.updateUser({
-        password: newPassword
+        password: newPassword,
       });
 
       if (error) {
@@ -199,7 +194,6 @@ export default function Account({ route }: { route: any }) {
 
       Alert.alert("Success", "Password updated successfully!");
       setShowPasswordModal(false);
-      setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (error) {
@@ -209,26 +203,31 @@ export default function Account({ route }: { route: any }) {
     } finally {
       setPasswordLoading(false);
     }
-  }
+  };
 
-  async function changeEmail() {
+  // Change email function
+  const changeEmail = async () => {
     try {
-      if (!newEmail || !newEmail.includes('@')) {
+      if (!newEmail || !newEmail.includes("@")) {
         Alert.alert("Error", "Please enter a valid email address!");
         return;
       }
 
       setEmailLoading(true);
 
+      // Use imported supabase for auth operations
       const { error } = await supabase.auth.updateUser({
-        email: newEmail
+        email: newEmail,
       });
 
       if (error) {
         throw error;
       }
 
-      Alert.alert("Success", "Email update initiated! Please check your new email for confirmation.");
+      Alert.alert(
+        "Success",
+        "Email update initiated! Please check your new email for confirmation."
+      );
       setShowEmailModal(false);
       setNewEmail("");
     } catch (error) {
@@ -238,69 +237,68 @@ export default function Account({ route }: { route: any }) {
     } finally {
       setEmailLoading(false);
     }
-  }
+  };
 
+  // Sign out using store
   const handleSignOut = async () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await supabase.auth.signOut();
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'SignUpOrLogIn' }],
-              });
-            } catch (error) {
-              Alert.alert("Error", "Failed to sign out");
-            }
-          },
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          await signOut();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "SignUpOrLogIn" }],
+          });
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.navigate('Home', { session });
+      navigation.navigate("Home");
     }
   };
 
-  const ProfileSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  const ProfileSection = ({
+    title,
+    children,
+  }: {
+    title: string;
+    children: React.ReactNode;
+  }) => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
   );
 
-  const InfoCard = ({ 
-    label, 
-    value, 
-    onPress, 
+  const InfoCard = ({
+    label,
+    value,
+    onPress,
     showEdit = false,
-    icon
-  }: { 
-    label: string; 
-    value: string; 
-    onPress?: () => void; 
+    icon,
+  }: {
+    label: string;
+    value: string;
+    onPress?: () => void;
     showEdit?: boolean;
-    icon: string;
+    icon: keyof typeof Ionicons.glyphMap;
   }) => (
-    <TouchableOpacity 
-      style={styles.infoCard} 
+    <TouchableOpacity
+      style={styles.infoCard}
       onPress={onPress}
       disabled={!onPress}
       activeOpacity={0.8}
     >
       <LinearGradient
-        colors={['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.02)']}
+        colors={["rgba(255, 255, 255, 0.05)", "rgba(255, 255, 255, 0.02)"]}
         style={styles.infoCardGradient}
       >
         <View style={styles.infoCardIcon}>
@@ -319,33 +317,29 @@ export default function Account({ route }: { route: any }) {
     </TouchableOpacity>
   );
 
-  if (!session) {
-    return (
-      <LinearGradient
-        colors={['#0A0A0A', '#1A0A1A', '#0A0A0A']}
-        style={styles.container}
-      >
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>No session found</Text>
-        </View>
-      </LinearGradient>
-    );
+  // Redirect to auth if no user - use useEffect to avoid setState during render
+  useEffect(() => {
+    if (!user) {
+      navigation.replace("SignUpOrLogIn");
+    }
+  }, [user, navigation]);
+
+  // Show loading or return null if no user
+  if (!user) {
+    return null;
   }
 
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
       <LinearGradient
-        colors={['#0A0A0A', '#1A0A1A', '#0A0A0A']}
+        colors={["#0A0A0A", "#1A0A1A", "#0A0A0A"]}
         style={styles.container}
       >
         <SafeAreaView style={styles.safeArea}>
           {/* Header */}
           <View style={styles.headerContainer}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={handleGoBack}
-            >
+            <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
               <View style={styles.backButtonContainer}>
                 <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
               </View>
@@ -354,31 +348,35 @@ export default function Account({ route }: { route: any }) {
             <View style={styles.headerSpacer} />
           </View>
 
-          <Animated.ScrollView 
+          <Animated.ScrollView
             showsVerticalScrollIndicator={false}
             style={[
               styles.scrollView,
               {
                 opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }]
-              }
+                transform: [{ translateY: slideAnim }],
+              },
             ]}
           >
             {/* Profile Header */}
             <View style={styles.profileHeader}>
               <View style={styles.avatarContainer}>
                 <LinearGradient
-                  colors={['#8B5CF6', '#A855F7']}
+                  colors={["#8B5CF6", "#A855F7"]}
                   style={styles.avatarGradient}
                 >
                   <Image
-                    source={avatarUrl ? { uri: avatarUrl } : require("../assets/logo.png")}
+                    source={
+                      profile?.avatar_url
+                        ? { uri: profile.avatar_url }
+                        : require("../../../assets/logo.png")
+                    }
                     style={styles.avatar}
                   />
                 </LinearGradient>
                 <TouchableOpacity style={styles.editAvatarButton}>
                   <LinearGradient
-                    colors={['#8B5CF6', '#A855F7']}
+                    colors={["#8B5CF6", "#A855F7"]}
                     style={styles.editAvatarGradient}
                   >
                     <Ionicons name="camera" size={16} color="#FFFFFF" />
@@ -386,32 +384,38 @@ export default function Account({ route }: { route: any }) {
                 </TouchableOpacity>
               </View>
               <Text style={styles.welcomeText}>
-                {username || fullName || "Music Lover"}
+                {profile?.display_name || profile?.artist_name || "Music Lover"}
               </Text>
               <Text style={styles.memberSince}>
-                Member since {new Date(session?.user?.created_at || "").toLocaleDateString()}
+                Member since{" "}
+                {new Date(user?.created_at || "").toLocaleDateString()}
               </Text>
+              {profile?.is_artist && (
+                <View style={styles.artistBadge}>
+                  <Text style={styles.artistBadgeText}>🎤 Artist</Text>
+                </View>
+              )}
             </View>
 
             {/* Account Information */}
             <ProfileSection title="Account Information">
-              <InfoCard 
-                label="Email Address" 
-                value={session?.user?.email || ""} 
+              <InfoCard
+                label="Email Address"
+                value={user?.email || ""}
                 onPress={() => setShowEmailModal(true)}
                 showEdit={true}
                 icon="mail-outline"
               />
-              <InfoCard 
-                label="Password" 
-                value="••••••••••••" 
+              <InfoCard
+                label="Password"
+                value="••••••••••••"
                 onPress={() => setShowPasswordModal(true)}
                 showEdit={true}
                 icon="lock-closed-outline"
               />
-              <InfoCard 
-                label="Account Type" 
-                value={session?.user?.user_metadata?.is_artist ? "Artist" : "Listener"}
+              <InfoCard
+                label="Account Type"
+                value={profile?.is_artist ? "Artist" : "Listener"}
                 icon="person-outline"
               />
             </ProfileSection>
@@ -419,29 +423,18 @@ export default function Account({ route }: { route: any }) {
             {/* Profile Information */}
             <ProfileSection title="Profile Information">
               <View style={styles.inputWrapper}>
-                <Text style={styles.inputLabel}>Full Name</Text>
+                <Text style={styles.inputLabel}>Display Name</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="person-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
-                  <Input
-                    value={fullName}
-                    onChangeText={setFullName}
-                    placeholder="Enter your full name"
-                    placeholderTextColor="#666"
-                    inputStyle={styles.textInput}
-                    containerStyle={styles.rneInputContainer}
-                    inputContainerStyle={styles.rneInputInnerContainer}
+                  <Ionicons
+                    name="person-outline"
+                    size={20}
+                    color="#8B5CF6"
+                    style={styles.inputIcon}
                   />
-                </View>
-              </View>
-              
-              <View style={styles.inputWrapper}>
-                <Text style={styles.inputLabel}>Username</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="at-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
                   <Input
-                    value={username}
-                    onChangeText={setUsername}
-                    placeholder="Choose a username"
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                    placeholder="Enter your display name"
                     placeholderTextColor="#666"
                     inputStyle={styles.textInput}
                     containerStyle={styles.rneInputContainer}
@@ -450,63 +443,117 @@ export default function Account({ route }: { route: any }) {
                 </View>
               </View>
 
+              {profile?.is_artist && (
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.inputLabel}>Artist Name</Text>
+                  <View style={styles.inputContainer}>
+                    <Ionicons
+                      name="musical-notes-outline"
+                      size={20}
+                      color="#8B5CF6"
+                      style={styles.inputIcon}
+                    />
+                    <Input
+                      value={artistName}
+                      onChangeText={setArtistName}
+                      placeholder="Your artist name"
+                      placeholderTextColor="#666"
+                      inputStyle={styles.textInput}
+                      containerStyle={styles.rneInputContainer}
+                      inputContainerStyle={styles.rneInputInnerContainer}
+                    />
+                  </View>
+                </View>
+              )}
+
               <View style={styles.inputWrapper}>
-                <Text style={styles.inputLabel}>Phone Number</Text>
+                <Text style={styles.inputLabel}>Bio</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="call-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
+                  <Ionicons
+                    name="document-text-outline"
+                    size={20}
+                    color="#8B5CF6"
+                    style={styles.inputIcon}
+                  />
                   <Input
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="Enter your phone number"
+                    value={bio}
+                    onChangeText={setBio}
+                    placeholder="Tell us about yourself..."
                     placeholderTextColor="#666"
                     inputStyle={styles.textInput}
                     containerStyle={styles.rneInputContainer}
                     inputContainerStyle={styles.rneInputInnerContainer}
-                    keyboardType="phone-pad"
+                    multiline
+                    numberOfLines={3}
                   />
                 </View>
               </View>
 
               <View style={styles.inputWrapper}>
-                <Text style={styles.inputLabel}>Website</Text>
+                <Text style={styles.inputLabel}>Location</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="link-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
+                  <Ionicons
+                    name="location-outline"
+                    size={20}
+                    color="#8B5CF6"
+                    style={styles.inputIcon}
+                  />
                   <Input
-                    value={website}
-                    onChangeText={setWebsite}
-                    placeholder="https://yourwebsite.com"
+                    value={location}
+                    onChangeText={setLocation}
+                    placeholder="Your location"
                     placeholderTextColor="#666"
                     inputStyle={styles.textInput}
                     containerStyle={styles.rneInputContainer}
                     inputContainerStyle={styles.rneInputInnerContainer}
-                    keyboardType="url"
                   />
                 </View>
               </View>
             </ProfileSection>
 
+            {/* Artist Stats Section */}
+            {profile?.is_artist && (
+              <ProfileSection title="Your Music">
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      {myTracks?.length || 0}
+                    </Text>
+                    <Text style={styles.statLabel}>Tracks</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      {myTracks?.reduce(
+                        (total, track) => total + (track.play_count || 0),
+                        0
+                      ) || 0}
+                    </Text>
+                    <Text style={styles.statLabel}>Total Plays</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      {new Set(myTracks?.map((track) => track.genre)).size || 0}
+                    </Text>
+                    <Text style={styles.statLabel}>Genres</Text>
+                  </View>
+                </View>
+              </ProfileSection>
+            )}
+
             {/* Action Buttons */}
             <View style={styles.actionButtons}>
               <TouchableOpacity
-                onPress={() =>
-                  updateProfile({ 
-                    username, 
-                    website, 
-                    avatar_url: avatarUrl,
-                    full_name: fullName,
-                    phone 
-                  })
-                }
-                disabled={loading}
+                onPress={handleUpdateProfile}
+                disabled={loading || authLoading}
                 style={styles.primaryButtonContainer}
               >
                 <LinearGradient
-                  colors={['#8B5CF6', '#A855F7']}
+                  colors={["#8B5CF6", "#A855F7"]}
                   style={styles.primaryButton}
                 >
                   <Ionicons name="save-outline" size={20} color="#FFFFFF" />
                   <Text style={styles.primaryButtonText}>
-                    {loading ? "Updating..." : "Update Profile"}
+                    {loading || authLoading ? "Updating..." : "Update Profile"}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -532,25 +579,22 @@ export default function Account({ route }: { route: any }) {
             animationType="none"
             onRequestClose={() => setShowEmailModal(false)}
           >
-            <Animated.View 
-              style={[
-                styles.modalOverlay,
-                { opacity: modalBackdropAnim }
-              ]}
+            <Animated.View
+              style={[styles.modalOverlay, { opacity: modalBackdropAnim }]}
             >
-              <TouchableOpacity 
-                style={StyleSheet.absoluteFill} 
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
                 onPress={() => setShowEmailModal(false)}
                 activeOpacity={1}
               />
-              <Animated.View 
+              <Animated.View
                 style={[
                   styles.modalContainer,
-                  { transform: [{ translateY: modalSlideAnim }] }
+                  { transform: [{ translateY: modalSlideAnim }] },
                 ]}
               >
                 <LinearGradient
-                  colors={['#1A0A1A', '#0A0A0A']}
+                  colors={["#1A0A1A", "#0A0A0A"]}
                   style={styles.modalGradient}
                 >
                   <View style={styles.modalHeader}>
@@ -558,11 +602,16 @@ export default function Account({ route }: { route: any }) {
                     <Text style={styles.modalTitle}>Change Email</Text>
                   </View>
                   <Text style={styles.modalSubtitle}>
-                    Current: {session?.user?.email}
+                    Current: {user?.email}
                   </Text>
-                  
+
                   <View style={styles.modalInputContainer}>
-                    <Ionicons name="mail-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
+                    <Ionicons
+                      name="mail-outline"
+                      size={20}
+                      color="#8B5CF6"
+                      style={styles.inputIcon}
+                    />
                     <Input
                       value={newEmail}
                       onChangeText={setNewEmail}
@@ -589,7 +638,7 @@ export default function Account({ route }: { route: any }) {
                       style={styles.modalConfirmButton}
                     >
                       <LinearGradient
-                        colors={['#8B5CF6', '#A855F7']}
+                        colors={["#8B5CF6", "#A855F7"]}
                         style={styles.modalConfirmGradient}
                       >
                         <Text style={styles.modalConfirmText}>
@@ -610,34 +659,40 @@ export default function Account({ route }: { route: any }) {
             animationType="none"
             onRequestClose={() => setShowPasswordModal(false)}
           >
-            <Animated.View 
-              style={[
-                styles.modalOverlay,
-                { opacity: modalBackdropAnim }
-              ]}
+            <Animated.View
+              style={[styles.modalOverlay, { opacity: modalBackdropAnim }]}
             >
-              <TouchableOpacity 
-                style={StyleSheet.absoluteFill} 
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
                 onPress={() => setShowPasswordModal(false)}
                 activeOpacity={1}
               />
-              <Animated.View 
+              <Animated.View
                 style={[
                   styles.modalContainer,
-                  { transform: [{ translateY: modalSlideAnim }] }
+                  { transform: [{ translateY: modalSlideAnim }] },
                 ]}
               >
                 <LinearGradient
-                  colors={['#1A0A1A', '#0A0A0A']}
+                  colors={["#1A0A1A", "#0A0A0A"]}
                   style={styles.modalGradient}
                 >
                   <View style={styles.modalHeader}>
-                    <Ionicons name="lock-closed-outline" size={24} color="#8B5CF6" />
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={24}
+                      color="#8B5CF6"
+                    />
                     <Text style={styles.modalTitle}>Change Password</Text>
                   </View>
-                  
+
                   <View style={styles.modalInputContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={20}
+                      color="#8B5CF6"
+                      style={styles.inputIcon}
+                    />
                     <Input
                       value={newPassword}
                       onChangeText={setNewPassword}
@@ -651,7 +706,12 @@ export default function Account({ route }: { route: any }) {
                   </View>
 
                   <View style={styles.modalInputContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#8B5CF6" style={styles.inputIcon} />
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={20}
+                      color="#8B5CF6"
+                      style={styles.inputIcon}
+                    />
                     <Input
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
@@ -677,7 +737,7 @@ export default function Account({ route }: { route: any }) {
                       style={styles.modalConfirmButton}
                     >
                       <LinearGradient
-                        colors={['#8B5CF6', '#A855F7']}
+                        colors={["#8B5CF6", "#A855F7"]}
                         style={styles.modalConfirmGradient}
                       >
                         <Text style={styles.modalConfirmText}>
@@ -703,19 +763,10 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 10,
@@ -728,14 +779,14 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
     letterSpacing: -0.5,
   },
   headerSpacer: {
@@ -758,8 +809,8 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     padding: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   avatar: {
     width: 112,
@@ -796,7 +847,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#B3B3B3",
     textAlign: "center",
-    fontWeight: '500',
+    fontWeight: "500",
+  },
+  artistBadge: {
+    backgroundColor: "rgba(139, 92, 246, 0.2)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 12,
+  },
+  artistBadgeText: {
+    color: "#8B5CF6",
+    fontSize: 14,
+    fontWeight: "700",
   },
   section: {
     marginBottom: 32,
@@ -812,22 +875,22 @@ const styles = StyleSheet.create({
   infoCard: {
     marginBottom: 12,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   infoCardGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: "rgba(139, 92, 246, 0.2)",
   },
   infoCardIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
   infoCardContent: {
@@ -837,7 +900,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#B3B3B3",
     marginBottom: 4,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   infoValue: {
     fontSize: 16,
@@ -848,9 +911,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   inputWrapper: {
     marginBottom: 20,
@@ -862,12 +925,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: "rgba(139, 92, 246, 0.2)",
     paddingHorizontal: 16,
   },
   inputIcon: {
@@ -876,7 +939,7 @@ const styles = StyleSheet.create({
   textInput: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   rneInputContainer: {
     flex: 1,
@@ -884,6 +947,29 @@ const styles = StyleSheet.create({
   },
   rneInputInnerContainer: {
     borderBottomWidth: 0,
+  },
+  statsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  statItem: {
+    alignItems: "center",
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#8B5CF6",
+  },
+  statLabel: {
+    fontSize: 14,
+    color: "#B3B3B3",
+    marginTop: 4,
+    fontWeight: "500",
   },
   actionButtons: {
     paddingHorizontal: 20,
@@ -898,9 +984,9 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 28,
@@ -916,12 +1002,12 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 59, 48, 0.1)",
     borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.3)',
+    borderColor: "rgba(255, 59, 48, 0.3)",
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 28,
@@ -940,20 +1026,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   modalContainer: {
-    width: '100%',
+    width: "100%",
     maxWidth: 400,
     borderRadius: 24,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   modalGradient: {
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: "rgba(139, 92, 246, 0.2)",
   },
   modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
     gap: 8,
   },
@@ -968,22 +1054,22 @@ const styles = StyleSheet.create({
     color: "#B3B3B3",
     marginBottom: 24,
     textAlign: "center",
-    fontWeight: '500',
+    fontWeight: "500",
   },
   modalInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: "rgba(139, 92, 246, 0.2)",
     paddingHorizontal: 16,
     marginBottom: 16,
   },
   modalInput: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   modalButtons: {
     flexDirection: "row",
@@ -993,18 +1079,18 @@ const styles = StyleSheet.create({
   },
   modalCancelButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 20,
     paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalCancelText: {
     color: "#B3B3B3",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   modalConfirmButton: {
     flex: 1,
@@ -1012,8 +1098,8 @@ const styles = StyleSheet.create({
   },
   modalConfirmGradient: {
     paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderRadius: 20,
   },
   modalConfirmText: {
