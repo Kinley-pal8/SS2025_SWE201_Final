@@ -22,6 +22,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../../persistence/stores/authStore";
 import { useTracksStore } from "../../persistence/stores/tracksStore";
 import { useMusicStore } from "../../persistence/stores/musicStore";
+import { trackService } from "../../services/tracks/trackService";
 
 // Import the separate components (keep your existing imports)
 import UploadModal from "./UploadModal";
@@ -97,6 +98,7 @@ export default function Home() {
   } = useTracksStore();
   const {
     currentTrack,
+    audioUrl,
     loadTrack,
     play,
     setQueue,
@@ -106,10 +108,12 @@ export default function Home() {
 
   // Helper function to check if user is an artist (same as Account.tsx)
   const isUserArtist = () => {
-    return profile?.is_artist === true || 
-           user?.user_metadata?.is_artist === true || 
-           profile?.user_type === 'artist' || 
-           user?.user_metadata?.user_type === 'artist';
+    return (
+      profile?.is_artist === true ||
+      user?.user_metadata?.is_artist === true ||
+      profile?.user_type === "artist" ||
+      user?.user_metadata?.user_type === "artist"
+    );
   };
 
   const [currentTime, setCurrentTime] = useState(() => {
@@ -139,13 +143,19 @@ export default function Home() {
     console.log("🏠 HOME DEBUG - Raw user object:", user);
     console.log("🏠 HOME DEBUG - User metadata:", user?.user_metadata);
     console.log("🏠 HOME DEBUG - Raw profile object:", profile);
-    
+
     // Check all possible ways the app might determine artist status
     console.log("🎤 HOME ARTIST STATUS CHECKS:");
     console.log("  - profile?.is_artist:", profile?.is_artist);
     console.log("  - profile?.user_type:", profile?.user_type);
-    console.log("  - user?.user_metadata?.is_artist:", user?.user_metadata?.is_artist);
-    console.log("  - user?.user_metadata?.user_type:", user?.user_metadata?.user_type);
+    console.log(
+      "  - user?.user_metadata?.is_artist:",
+      user?.user_metadata?.is_artist
+    );
+    console.log(
+      "  - user?.user_metadata?.user_type:",
+      user?.user_metadata?.user_type
+    );
     console.log("  - isUserArtist():", isUserArtist());
   }, [user, profile]);
 
@@ -220,18 +230,21 @@ export default function Home() {
   });
 
   // Convert to PlayerSong format for MusicPlayerCard
-  const convertToPlayerSong = (song: Song): PlayerSong => ({
-    id: song.id,
-    title: song.title,
-    artist:
-      song.users?.artist_name || song.users?.display_name || "Unknown Artist",
-    album: song.album || "Unknown Album",
-    plays: song.play_count?.toString() || "0",
-    duration: song.duration || 0,
-    likes: 0, // Will implement likes later
-    image:
-      song.cover_image_path || "https://picsum.photos/200/200?random=default",
-  });
+  const convertToPlayerSong = (song: Song): PlayerSong => {
+    return {
+      id: song.id,
+      title: song.title,
+      artist:
+        song.users?.artist_name || song.users?.display_name || "Unknown Artist",
+      album: song.album || "Unknown Album",
+      plays: song.play_count?.toString() || "0",
+      duration: song.duration || 0,
+      likes: 0, // Will implement likes later
+      image:
+        song.cover_image_path || "https://picsum.photos/200/200?random=default",
+      file_path: song.file_path, // Pass file_path so MusicPlayerCard can get audio URL
+    };
+  };
 
   const getGreeting = () => {
     const greetings: Record<string, string> = {
@@ -253,6 +266,24 @@ export default function Home() {
 
   const handleSongPress = async (song: Song) => {
     try {
+      // Convert Song to Track for music store
+      const track = {
+        ...song,
+        genre: song.genre || null,
+        album: song.album || null,
+        description: song.description || null,
+        cover_image_path: song.cover_image_path || null,
+        duration: song.duration || null,
+        file_size: song.file_size || null,
+        users: song.users
+          ? {
+              display_name: song.users.display_name || null,
+              artist_name: song.users.artist_name || null,
+              avatar_url: song.users.avatar_url || null,
+            }
+          : undefined,
+      };
+
       // Convert all tracks to song format for the queue
       const allSongs = tracks.map(convertTrackToSong);
       const songIndex = allSongs.findIndex((s) => s.id === song.id);
@@ -261,7 +292,7 @@ export default function Home() {
       setQueue(tracks, songIndex);
 
       // Load and play the track
-      await loadTrack(song);
+      await loadTrack(track);
       play();
 
       // Show the player
@@ -289,8 +320,12 @@ export default function Home() {
       users: {
         display_name: searchSong.artist,
         artist_name: searchSong.artist,
+        avatar_url: undefined,
       },
       cover_image_path: searchSong.image,
+      genre: undefined,
+      description: undefined,
+      file_size: undefined,
     };
     handleSongPress(trackSong); // Fire and forget async call
   };
@@ -591,7 +626,8 @@ export default function Home() {
               {profile?.artist_name || profile?.display_name || "None"}
             </Text>
             <Text style={styles.debugText}>
-              🎤 Artist Status: {isUserArtist() ? "TRUE" : "FALSE"} | Upload Button: {isUserArtist() ? "VISIBLE" : "HIDDEN"}
+              🎤 Artist Status: {isUserArtist() ? "TRUE" : "FALSE"} | Upload
+              Button: {isUserArtist() ? "VISIBLE" : "HIDDEN"}
             </Text>
             {tracksLoading && (
               <Text style={styles.debugText}>🔄 Loading...</Text>

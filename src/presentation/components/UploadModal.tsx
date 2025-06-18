@@ -45,6 +45,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
     isUploading: false,
     uploadProgress: 0,
     statusMessage: "",
+    uploadAbortController: null as AbortController | null,
   });
 
   // Animation refs
@@ -84,20 +85,94 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
   const handleFileSelect = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*'],
+        type: ["audio/mpeg", "audio/mp3", "audio/*"],
         copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets[0]) {
-        console.log('📁 Audio file selected:', result.assets[0].name);
+        const file = result.assets[0];
+
+        // Validate file type (MP3)
+        const isValidType =
+          file.mimeType?.includes("audio") ||
+          file.name?.toLowerCase().endsWith(".mp3") ||
+          file.name?.toLowerCase().endsWith(".wav") ||
+          file.name?.toLowerCase().endsWith(".flac");
+
+        if (!isValidType) {
+          Alert.alert(
+            "Invalid File",
+            "Please select an MP3, WAV, or FLAC audio file"
+          );
+          return;
+        }
+
+        // Validate file size (max 50MB, warn at 20MB)
+        const maxSize = 50 * 1024 * 1024; // 50MB
+        const warnSize = 20 * 1024 * 1024; // 20MB
+
+        if (file.size && file.size > maxSize) {
+          Alert.alert(
+            "File Too Large",
+            "Please select a file smaller than 50MB"
+          );
+          return;
+        }
+
+        if (file.size && file.size > warnSize) {
+          Alert.alert(
+            "Large File Warning",
+            `This file is ${(file.size / 1024 / 1024).toFixed(
+              2
+            )} MB. Large files may take longer to upload. Continue?`,
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Continue",
+                onPress: () => {
+                  console.log("📁 Large file approved by user:", {
+                    name: file.name,
+                    size: file.size,
+                    type: file.mimeType,
+                    uri: file.uri,
+                  });
+
+                  setUploadData((prev) => ({ ...prev, audioFile: result }));
+
+                  Alert.alert(
+                    "File Selected",
+                    `Selected: ${file.name} (${
+                      file.size
+                        ? (file.size / 1024 / 1024).toFixed(2)
+                        : "Unknown"
+                    } MB)`
+                  );
+                },
+              },
+            ]
+          );
+          return;
+        }
+
+        console.log("📁 Valid audio file selected:", {
+          name: file.name,
+          size: file.size,
+          type: file.mimeType,
+          uri: file.uri,
+        });
+
         setUploadData((prev) => ({ ...prev, audioFile: result }));
+
+        Alert.alert(
+          "File Selected",
+          `Selected: ${file.name} (${
+            file.size ? (file.size / 1024 / 1024).toFixed(2) : "Unknown"
+          } MB)`
+        );
       }
     } catch (error) {
-      console.error('❌ Error selecting audio file:', error);
-      Alert.alert(
-        "Error",
-        "Failed to select audio file. Please try again."
-      );
+      console.error("❌ Error selecting audio file:", error);
+      Alert.alert("Error", "Failed to select audio file. Please try again.");
     }
   };
 
@@ -111,15 +186,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        console.log('🖼️ Cover image selected:', result.assets[0].fileName);
+        console.log("🖼️ Cover image selected:", result.assets[0].fileName);
         setUploadData((prev) => ({ ...prev, coverImage: result }));
       }
     } catch (error) {
-      console.error('❌ Error selecting cover image:', error);
-      Alert.alert(
-        "Error",
-        "Failed to select cover image. Please try again."
-      );
+      console.error("❌ Error selecting cover image:", error);
+      Alert.alert("Error", "Failed to select cover image. Please try again.");
     }
   };
 
@@ -147,11 +219,19 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
     }));
 
     try {
-      console.log('🔄 Starting upload:', uploadData.title);
-      console.log('📁 File details:', {
-        name: uploadData.audioFile.assets[0].name,
-        size: uploadData.audioFile.assets[0].size,
-        type: uploadData.audioFile.assets[0].mimeType,
+      console.log("🔄 Starting upload:", uploadData.title);
+
+      // Validate audio file exists and has assets
+      if (!uploadData.audioFile?.assets?.[0]) {
+        throw new Error("No valid audio file selected");
+      }
+
+      const audioFile = uploadData.audioFile.assets[0];
+      console.log("📁 File details:", {
+        name: audioFile.name,
+        size: audioFile.size,
+        type: audioFile.mimeType,
+        uri: audioFile.uri,
       });
 
       // Prepare track data for your tracksStore
@@ -160,7 +240,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
         genre: uploadData.genre.trim() || null,
         album: uploadData.album.trim() || null,
         description: uploadData.description.trim() || null,
-        audioFile: uploadData.audioFile.assets[0], // Get the actual file
+        audioFile: audioFile, // Get the actual file
       };
 
       // Progressive status updates with timeouts
@@ -175,42 +255,92 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
 
       // Step 1: Validate file
       updateProgress(10, "Validating audio file...");
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Step 2: Start upload
       updateProgress(20, "Starting file upload...");
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Step 3: Upload file (this is where it might get stuck)
+      // Step 3: Upload file with better progress tracking
       updateProgress(30, "Uploading to storage...");
-      
-      // Add timeout wrapper for createTrack
-      const uploadTimeout = 60000; // 60 seconds timeout
-      console.log(`⏰ Starting createTrack with ${uploadTimeout}ms timeout`);
-      console.log('📋 Track data being sent:', {
+
+      // Determine timeout based on file size (very generous for large files)
+      const fileSizeMB = (audioFile.size || 0) / (1024 * 1024);
+      const baseTimeout = 180000; // 3 minutes base (increased from 2)
+      const sizeMultiplier = Math.min(fileSizeMB * 20000, 900000); // Up to 15 more minutes for large files (increased from 8)
+      const uploadTimeout = baseTimeout + sizeMultiplier;
+
+      console.log(
+        `⏰ Starting createTrack with ${Math.round(
+          uploadTimeout / 1000
+        )}s timeout for ${fileSizeMB.toFixed(2)}MB file`
+      );
+      console.log("📋 Track data being sent:", {
         ...trackData,
-        audioFile: `${trackData.audioFile.name} (${trackData.audioFile.size} bytes)`
+        audioFile: `${audioFile.name} (${audioFile.size || "Unknown"} bytes)`,
       });
-      
-      const uploadPromise = createTrack(user.id, trackData);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Upload timeout after 60 seconds')), uploadTimeout)
+
+      // Create upload promise with progress simulation
+      const uploadPromise = (async () => {
+        const progressInterval = setInterval(() => {
+          setUploadData((prev) => {
+            if (prev.uploadProgress < 85) {
+              const increment = Math.random() * 5 + 2; // Random increment between 2-7%
+              const newProgress = Math.min(prev.uploadProgress + increment, 85);
+              return {
+                ...prev,
+                uploadProgress: newProgress,
+                statusMessage:
+                  newProgress < 50
+                    ? "Uploading file..."
+                    : newProgress < 75
+                    ? "Processing audio..."
+                    : "Saving to database...",
+              };
+            }
+            return prev;
+          });
+        }, 2000); // Update every 2 seconds
+
+        try {
+          const result = await createTrack(user.id, trackData);
+          clearInterval(progressInterval);
+          return result;
+        } catch (error) {
+          clearInterval(progressInterval);
+          throw error;
+        }
+      })();
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Upload timeout after ${Math.round(
+                  uploadTimeout / 1000
+                )} seconds. Please try with a smaller file or check your internet connection.`
+              )
+            ),
+          uploadTimeout
+        )
       );
 
-      updateProgress(60, "Processing audio file...");
-      
       // Race between upload and timeout
       const success = await Promise.race([uploadPromise, timeoutPromise]);
 
-      console.log('✅ Upload result:', success);
-      console.log('✅ Upload completed successfully at:', new Date().toISOString());
+      console.log("✅ Upload result:", success);
+      console.log(
+        "✅ Upload completed successfully at:",
+        new Date().toISOString()
+      );
 
       if (success) {
         updateProgress(90, "Finalizing upload...");
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         updateProgress(100, "Upload complete!");
-        
+
         setTimeout(() => {
           Alert.alert(
             "🎉 Upload Successful!",
@@ -226,38 +356,82 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
           );
         }, 500);
       } else {
-        throw new Error('Upload failed - createTrack returned false');
+        throw new Error("Upload failed - createTrack returned false");
       }
     } catch (error) {
-      console.error('❌ Upload error:', error);
-      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      
-      Alert.alert(
-        "Upload Failed",
-        `Failed to upload track: ${errorMessage}`,
-        [
-          {
-            text: "Try Again",
-            onPress: () => {
+      console.error("❌ Upload error:", error);
+      console.error(
+        "❌ Error stack:",
+        error instanceof Error ? error.stack : "No stack trace"
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      const isTimeout = errorMessage.includes("timeout");
+      const isNetworkError =
+        errorMessage.includes("fetch") || errorMessage.includes("network");
+      const isFileSizeError =
+        errorMessage.includes("too large") || errorMessage.includes("Payload");
+
+      // Get file size for error message
+      const currentFile = uploadData.audioFile?.assets?.[0];
+      const currentFileSizeMB = (currentFile?.size || 0) / (1024 * 1024);
+
+      let alertTitle = "Upload Failed";
+      let alertMessage = `Failed to upload track: ${errorMessage}`;
+
+      if (isTimeout) {
+        alertTitle = "Upload Taking Too Long";
+        alertMessage = `The upload timed out. For large files (${currentFileSizeMB.toFixed(
+          1
+        )}MB), try:\n\n• Use a smaller file (under 20MB recommended)\n• Check your internet connection\n• Retry during off-peak hours`;
+      } else if (isFileSizeError) {
+        alertTitle = "File Too Large";
+        alertMessage =
+          "The file is too large for upload. Please use a file smaller than 50MB or compress your audio file.";
+      } else if (isNetworkError) {
+        alertTitle = "Network Error";
+        alertMessage =
+          "Network connection issue. Please check your internet connection and try again.";
+      }
+
+      Alert.alert(alertTitle, alertMessage, [
+        {
+          text:
+            isTimeout || isFileSizeError ? "Choose Different File" : "Retry",
+          onPress: () => {
+            if (isTimeout || isFileSizeError) {
+              // Reset file selection for timeout/size errors
+              setUploadData((prev) => ({
+                ...prev,
+                title: "",
+                genre: "",
+                album: "",
+                description: "",
+                audioFile: null,
+                isUploading: false,
+                uploadProgress: 0,
+                statusMessage: "",
+              }));
+            } else {
+              // Just reset upload state for other errors
               setUploadData((prev) => ({
                 ...prev,
                 isUploading: false,
                 uploadProgress: 0,
                 statusMessage: "",
               }));
-            },
+            }
           },
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () => {
-              resetForm();
-            },
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => {
+            resetForm();
           },
-        ]
-      );
+        },
+      ]);
     }
   };
 
@@ -297,16 +471,31 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
       isUploading: false,
       uploadProgress: 0,
       statusMessage: "",
+      uploadAbortController: null,
     });
   };
 
   // Check if upload can be enabled
-  const canUpload = uploadData.title.trim() && uploadData.audioFile && !uploadData.isUploading && !storeLoading;
+  const canUpload =
+    uploadData.title.trim() &&
+    uploadData.audioFile &&
+    !uploadData.isUploading &&
+    !storeLoading;
 
   // Common genres for quick selection
   const commonGenres = [
-    'Hip-Hop', 'Electronic', 'Pop', 'Rock', 'Jazz', 'Classical',
-    'R&B', 'Country', 'Reggae', 'Blues', 'Folk', 'Indie'
+    "Hip-Hop",
+    "Electronic",
+    "Pop",
+    "Rock",
+    "Jazz",
+    "Classical",
+    "R&B",
+    "Country",
+    "Reggae",
+    "Blues",
+    "Folk",
+    "Indie",
   ];
 
   return (
@@ -368,11 +557,13 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                   !canUpload && styles.headerButtonDisabled,
                 ]}
               >
-                {(uploadData.isUploading || storeLoading) ? (
+                {uploadData.isUploading || storeLoading ? (
                   <ActivityIndicator size="small" color="#8B5CF6" />
                 ) : (
                   <LinearGradient
-                    colors={canUpload ? ["#8B5CF6", "#A855F7"] : ["#666", "#666"]}
+                    colors={
+                      canUpload ? ["#8B5CF6", "#A855F7"] : ["#666", "#666"]
+                    }
                     style={styles.uploadButtonGradient}
                   >
                     <Text style={styles.uploadButtonText}>Upload</Text>
@@ -439,15 +630,24 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                       key={genreOption}
                       style={[
                         styles.genreChip,
-                        uploadData.genre === genreOption && styles.genreChipSelected
+                        uploadData.genre === genreOption &&
+                          styles.genreChipSelected,
                       ]}
-                      onPress={() => setUploadData((prev) => ({ ...prev, genre: genreOption }))}
+                      onPress={() =>
+                        setUploadData((prev) => ({
+                          ...prev,
+                          genre: genreOption,
+                        }))
+                      }
                       disabled={uploadData.isUploading}
                     >
-                      <Text style={[
-                        styles.genreChipText,
-                        uploadData.genre === genreOption && styles.genreChipTextSelected
-                      ]}>
+                      <Text
+                        style={[
+                          styles.genreChipText,
+                          uploadData.genre === genreOption &&
+                            styles.genreChipTextSelected,
+                        ]}
+                      >
                         {genreOption}
                       </Text>
                     </TouchableOpacity>
@@ -547,10 +747,17 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                       ]}
                     >
                       {uploadData.audioFile?.assets?.[0]?.name ||
-                        "Tap to select audio file"}
+                        "Tap to select MP3 audio file"}
                     </Text>
                     <Text style={styles.filePickerSubtext}>
-                      MP3, WAV, FLAC • Max 50MB
+                      MP3, WAV, FLAC • Max 50MB • Recommended: Under 20MB for
+                      faster upload
+                      {uploadData.audioFile?.assets?.[0]?.size &&
+                        ` • ${(
+                          uploadData.audioFile.assets[0].size /
+                          1024 /
+                          1024
+                        ).toFixed(2)} MB`}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -602,7 +809,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                     </View>
 
                     <Text style={styles.uploadStatusText}>
-                      {uploadData.statusMessage || "Processing audio and saving to database..."}
+                      {uploadData.statusMessage ||
+                        "Processing audio and saving to database..."}
                     </Text>
 
                     {/* Cancel Upload Button */}
@@ -618,7 +826,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
                               text: "Cancel Upload",
                               style: "destructive",
                               onPress: () => {
-                                console.log('🚫 User cancelled upload');
+                                console.log("🚫 User cancelled upload");
                                 resetForm();
                               },
                             },
@@ -636,31 +844,27 @@ const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
               {uploadData.isUploading && (
                 <View style={styles.debugContainer}>
                   <LinearGradient
-                    colors={[
-                      "rgba(75, 85, 99, 0.1)",
-                      "rgba(75, 85, 99, 0.05)",
-                    ]}
+                    colors={["rgba(75, 85, 99, 0.1)", "rgba(75, 85, 99, 0.05)"]}
                     style={styles.debugGradient}
                   >
                     <View style={styles.debugHeader}>
-                      <Ionicons
-                        name="bug-outline"
-                        size={16}
-                        color="#9CA3AF"
-                      />
+                      <Ionicons name="bug-outline" size={16} color="#9CA3AF" />
                       <Text style={styles.debugTitle}>Debug Info</Text>
                     </View>
                     <Text style={styles.debugText}>
-                      File: {uploadData.audioFile?.assets?.[0]?.name || 'None'}
+                      File: {uploadData.audioFile?.assets?.[0]?.name || "None"}
                     </Text>
                     <Text style={styles.debugText}>
-                      Size: {uploadData.audioFile?.assets?.[0]?.size ? 
-                        `${(uploadData.audioFile.assets[0].size / (1024 * 1024)).toFixed(2)} MB` : 
-                        'Unknown'
-                      }
+                      Size:{" "}
+                      {uploadData.audioFile?.assets?.[0]?.size
+                        ? `${(
+                            uploadData.audioFile.assets[0].size /
+                            (1024 * 1024)
+                          ).toFixed(2)} MB`
+                        : "Unknown"}
                     </Text>
                     <Text style={styles.debugText}>
-                      Status: {uploadData.statusMessage || 'Starting...'}
+                      Status: {uploadData.statusMessage || "Starting..."}
                     </Text>
                     <Text style={styles.debugText}>
                       Progress: {uploadData.uploadProgress}%
@@ -859,30 +1063,30 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   genreChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginTop: 8,
     gap: 8,
   },
   genreChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   genreChipSelected: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    borderColor: '#8B5CF6',
+    backgroundColor: "rgba(139, 92, 246, 0.2)",
+    borderColor: "#8B5CF6",
   },
   genreChipText: {
     fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '500',
+    color: "#FFFFFF",
+    fontWeight: "500",
   },
   genreChipTextSelected: {
-    color: '#8B5CF6',
+    color: "#8B5CF6",
   },
   filePicker: {
     borderRadius: 16,
@@ -925,7 +1129,7 @@ const styles = StyleSheet.create({
   bigUploadButton: {
     marginVertical: 20,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -933,16 +1137,16 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   bigUploadButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 18,
     paddingHorizontal: 24,
   },
   bigUploadButtonText: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "700",
+    color: "#FFFFFF",
     marginLeft: 8,
   },
   uploadProgress: {
@@ -1025,7 +1229,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#9CA3AF",
     marginBottom: 4,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
   },
   guidelinesContainer: {
     marginBottom: 24,
